@@ -1,0 +1,1274 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Apprentissage de paramètres par maximum de vraisemblance\n",
+    "Dans ce TME, l'objectif est d'apprendre grâce à l'estimateur de maximum de vraisemblance les paramètres de lois normales à partir d'un ensemble de données. Ces lois normales seront ensuite exploitées pour faire de la classifica base de données d'apprentissage est la base USPS. Celle-ci contient les images réelles de chiffres provenant de codes postaux écrits manuellement et scannés par le service des postes américain. Ces données scannées ont été normalisées de manière à ce qu'elles soient toutes des images de 16x16 pixels en teintes de gris, cf. Le Cun et al., 1990tion (comme nous l'avions vu en cours avec les images de désert, forêt, mer et paysages enneigés).\n",
+    "\n",
+    "Ici, notre:\n",
+    "\n",
+    "Y. LeCun, O. Matan, B. Boser, J. S. Denker, et al. (1990) *Handwritten zip code recognition with multilayer networks*. In ICPR, volume II, pages 35–40.\n",
+    "\n",
+    "Voici quelques exemples d'images de cette base : \n",
+    "\n",
+    "<img src=\"usps.png\" title=\"Quelques exemples\">\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import pickle as pkl"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Chargement des données et premières visualisations\n",
+    "\n",
+    "Nous utiliserons la librairie pickle qui permet de sérialiser les objets en python (ie, les sauver et les charger très facilement).\n",
+    "Une fois les données chargées, nous allons étudier très rapidement la distribution des classes, visualiser une imagette de chiffre et comprendre l'encodage de ces chiffres."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(array([488., 412., 311., 260., 306., 244., 261., 282., 224., 281.]),\n",
+       " array([-0.5,  0.5,  1.5,  2.5,  3.5,  4.5,  5.5,  6.5,  7.5,  8.5,  9.5]),\n",
+       " <BarContainer object of 10 artists>)"
+      ]
+     },
+     "execution_count": 2,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# Chargement des données\n",
+    "data = pkl.load(open(\"usps.pkl\",'rb')) \n",
+    "# data est un dictionnaire contenant les champs explicites X_train, X_test, Y_train, Y_test\n",
+    "X_train = np.array(data[\"X_train\"],dtype=float) # changement de type pour éviter les problèmes d'affichage\n",
+    "X_test = np.array(data[\"X_test\"],dtype=float)\n",
+    "Y_train = data[\"Y_train\"]\n",
+    "Y_test = data[\"Y_test\"]\n",
+    "\n",
+    "# visualisation de la distribution des étiquettes (dans les 10 classes de chiffres)\n",
+    "plt.figure()\n",
+    "plt.hist(Y_train, np.linspace(-0.5,9.5,11))\n",
+    "plt.hist(Y_test, np.linspace(-0.5,9.5,11))\n",
+    "#plt.savefig(\"distr_classes.png\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(6229, 256)\n",
+      "(3069, 256) (6229,) (3069,)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "Text(0.5, 1.0, 'Image de : 6')"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# prise en main des matrices X, Y\n",
+    "print(X_train.shape)\n",
+    "# 6229 images composées de 256 pixels (image = 16x16)\n",
+    "print(X_test.shape,Y_train.shape, Y_test.shape)\n",
+    "\n",
+    "# Affichage de l'image 18 de la base de données et récupération de l'étiquette associée:\n",
+    "# (1) remise en forme de la ligne de 256 pixels en 16x16\n",
+    "# (2) affichage avec imshow (en niveaux de gris)\n",
+    "# (3) récupération de l'étiquette dans Y_train\n",
+    "\n",
+    "plt.figure()\n",
+    "plt.imshow(X_train[18].reshape(16,16),cmap=\"gray\")\n",
+    "plt.title(\"Image de : {}\".format(Y_train[18]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.0 2.0\n",
+      "niveaux de gris :  2001\n"
+     ]
+    }
+   ],
+   "source": [
+    "# analyse des valeurs min et max, recherche du nombre de niveaux de gris dans les images:\n",
+    "print(X_train.min(),X_train.max() )\n",
+    "print(\"niveaux de gris : \", len(np.unique(X_train))) "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# A. Apprentissage et évaluation d'un modèle gaussien naïf\n",
+    "\n",
+    "## A1- Maximum de vraisemblance \n",
+    "\n",
+    "Nous allons étudier la distribution de probabilité des teintes de gris des images (en fait, nous allons étudier sa fonction de densité car on travaille sur des variables aléatoires continues) . Nous allons faire l'hypothèse (certes un peu forte mais tellement pratique) que, dans chaque classe, les teintes des pixels sont mutuellement indépendantes. \n",
+    "\n",
+    "Autrement dit, si $X_i, i\\in \\{0,...,255\\}$ représente la variable aléatoire \"intensité de gris du ième pixel\", alors $p(X_0,…,X_{255})$ représente la fonction de densité des teintes de gris des images de la classe et: \n",
+    "\n",
+    "$$p(X_0,,…,X_{255})=\\prod_{i=0}^{255} p(X_i)$$\n",
+    "\n",
+    "Ainsi, en choisissant au hasard une image dans l'ensemble de toutes les images possibles de la classe, si celle-ci correspond au tableau `np.array([x_0,...,x_255])`, où les $x_i$ sont des nombres réels compris entre 0 et 2, alors la valeur de la fonction de densité de l'image est égale à $p(x_0,...,x_{255}) = \\prod^{255}_{i=0}p(x_i)$. \n",
+    "\n",
+    "Nous allons de plus supposer que chaque $X_i$ suit une distribution normale de paramètres $(μ_i,σ^2_i)$. Autrement dit, $$\\forall i\\in\\{0,...,255\\}, X_i \\sim {\\cal N}(μ_i,σ^2_i)$$ \n",
+    "\n",
+    "Par maximum de vraisemblance, estimez, pour une classe donnée, l'ensemble des paramètres $(μ_0,…,μ_{255})$ et $(σ^2_0,…,σ^2_{255})$ pour chaque classe (chiffre de 0 à 9). Pour cela, écrivez une fonction `learnML_parameters : float np.array x float np.array -> float np.array x float np.array` qui, étant donné le tableau d'images , renvoie un couple de tableaux, le premier élément du couple correspondant à l'ensemble des $μ_i$ et le 2ème à l'ensemble des $σ^2_i$. C'est-à-dire que `learnML_parameters` renverra deux matrices:\n",
+    "$$ mu \\in \\mathbb R^{10 \\times 256}, sig \\in \\mathbb R^{10 \\times 256}$$\n",
+    "\n",
+    "* mu contient les moyennes des 256 pixels pour les 10 classes\n",
+    "* std contient les écarts-types des 256 pixels pour les 10 classes\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def learnML_parameters(X, Y):\n",
+    "    \"\"\"\n",
+    "    Estime les paramètres de distribution normale (moyennes et écarts-types) pour chaque pixel\n",
+    "    de chaque classe à partir d'un ensemble d'images.\n",
+    "\n",
+    "    Paramètres:\n",
+    "    X (np.ndarray): Tableau des images (N x 256), N étant le nombre d'images et 256 le nombre de pixels par image.\n",
+    "    Y (np.array): Vecteur des étiquettes de classe pour chaque image.\n",
+    "\n",
+    "    Retourne:\n",
+    "    Tuple de deux np.ndarray:\n",
+    "        - mu (np.ndarray): Matrice des moyennes des pixels pour les 10 classes (10 x 256).\n",
+    "        - std (np.ndarray): Matrice des écarts-types des pixels pour les 10 classes (10 x 256).\n",
+    "    \"\"\"\n",
+    "    \n",
+    "    num_classes = 10\n",
+    "    num_features = X.shape[1]\n",
+    "    mu = np.zeros((num_classes, num_features))\n",
+    "    std = np.zeros((num_classes, num_features))\n",
+    "\n",
+    "    for c in range(num_classes):\n",
+    "        X_c = X[Y == c]\n",
+    "        if len(X_c) > 0:  # Vérification que la classe a des exemples\n",
+    "            mu[c] = np.mean(X_c, axis=0)\n",
+    "            std[c] = np.std(X_c, axis=0, ddof=1)  # Utilisation de ddof=1 pour une estimation non biaisée\n",
+    "        else:\n",
+    "            mu[c] = np.nan  # Utilisation de NaN pour indiquer l'absence de données\n",
+    "            std[c] = np.nan\n",
+    "\n",
+    "    return mu, std\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(10, 256) (10, 256)\n"
+     ]
+    }
+   ],
+   "source": [
+    "mu,sig = learnML_parameters( X_train, Y_train )\n",
+    "print(mu.shape, sig.shape) # doit donner (10, 256) (10, 256)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Check: pour la classe 0, les paramètres doivent être les suivants\n",
+    "```\n",
+    "mu[0]=\n",
+    "[1.53774208e-03 4.46785940e-03 1.71216078e-02 6.31194048e-02\n",
+    " 1.84061642e-01 4.71391665e-01 8.97640989e-01 1.15019928e+00\n",
+    " ...\n",
+    " 1.42675380e+00 1.03130694e+00 5.32240296e-01 1.74166387e-01\n",
+    " 3.57644515e-02 5.52804884e-03 4.36592998e-04 0.00000000e+00]\n",
+    "sig[0]=\n",
+    "[5.01596286e-02 7.93695089e-02 1.46489017e-01 2.65522337e-01\n",
+    " 4.42306204e-01 6.35148001e-01 7.40462105e-01 7.48387032e-01\n",
+    " ...\n",
+    " 6.62741331e-01 6.75677391e-01 5.86224763e-01 3.56460503e-01\n",
+    " 1.71512333e-01 5.67475697e-02 1.20193571e-02 0.00000000e+00]\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[1.53774208e-03 4.46785940e-03 1.71216078e-02 6.31194048e-02\n",
+      " 1.84061642e-01 4.71391665e-01 8.97640989e-01 1.15019928e+00\n",
+      " 1.02070900e+00 6.16785408e-01 2.50766353e-01 8.09903122e-02\n",
+      " 1.49310824e-02 3.87033274e-03 1.70898437e-04 0.00000000e+00\n",
+      " 2.35601434e-03 7.93762565e-03 5.18573940e-02 2.00940178e-01\n",
+      " 5.59411980e-01 1.10202446e+00 1.53532559e+00 1.66378367e+00\n",
+      " 1.60174400e+00 1.37845195e+00 9.19353768e-01 4.15479248e-01\n",
+      " 1.22346858e-01 3.01527050e-02 4.24372534e-03 5.63428995e-06\n",
+      " 5.88210737e-03 3.00679919e-02 1.45009354e-01 4.68428296e-01\n",
+      " 9.87103163e-01 1.46020945e+00 1.63103905e+00 1.59445846e+00\n",
+      " 1.52785712e+00 1.52155705e+00 1.36630499e+00 9.33882722e-01\n",
+      " 4.29464169e-01 1.16865928e-01 2.02650169e-02 1.02089895e-03\n",
+      " 7.91202062e-03 6.88018163e-02 3.30783411e-01 8.24194929e-01\n",
+      " 1.31254975e+00 1.54256605e+00 1.44943446e+00 1.21191395e+00\n",
+      " 1.09220056e+00 1.22655949e+00 1.39070742e+00 1.27821441e+00\n",
+      " 8.46682745e-01 3.48925595e-01 8.07226924e-02 4.64439750e-03\n",
+      " 1.59532081e-02 1.76675445e-01 6.07781794e-01 1.12757141e+00\n",
+      " 1.46523519e+00 1.45472469e+00 1.13856317e+00 8.10338934e-01\n",
+      " 6.26168286e-01 7.76955398e-01 1.10779727e+00 1.32851374e+00\n",
+      " 1.16676063e+00 6.86548686e-01 2.41357803e-01 2.81289553e-02\n",
+      " 4.81442913e-02 3.73752078e-01 8.81483647e-01 1.31949916e+00\n",
+      " 1.46700523e+00 1.23718114e+00 8.16962582e-01 4.43474916e-01\n",
+      " 2.80405642e-01 4.08021647e-01 7.81619032e-01 1.17122113e+00\n",
+      " 1.27515733e+00 9.72332353e-01 4.74029267e-01 8.55221959e-02\n",
+      " 1.30783142e-01 5.93982138e-01 1.07686306e+00 1.39894059e+00\n",
+      " 1.36844099e+00 9.74245539e-01 5.33412071e-01 2.15832907e-01\n",
+      " 1.06282689e-01 1.88639261e-01 5.18731675e-01 9.65949319e-01\n",
+      " 1.24726249e+00 1.12132596e+00 6.89466858e-01 1.96154590e-01\n",
+      " 2.50674651e-01 7.61315399e-01 1.19695898e+00 1.38864862e+00\n",
+      " 1.19971341e+00 7.48517123e-01 3.30572606e-01 9.84733976e-02\n",
+      " 4.29241342e-02 1.03367730e-01 3.87229277e-01 8.44056198e-01\n",
+      " 1.20012881e+00 1.18425086e+00 8.20222630e-01 3.08674699e-01\n",
+      " 3.58261634e-01 8.62190202e-01 1.25563738e+00 1.34673373e+00\n",
+      " 1.07142879e+00 5.89123140e-01 1.96728277e-01 4.28680832e-02\n",
+      " 1.60351829e-02 7.26840328e-02 3.45407532e-01 8.19457636e-01\n",
+      " 1.19289312e+00 1.21496732e+00 8.84999523e-01 3.79906737e-01\n",
+      " 3.87331813e-01 9.06482830e-01 1.29035945e+00 1.31940006e+00\n",
+      " 9.78757769e-01 4.76966465e-01 1.27168587e-01 2.11923134e-02\n",
+      " 1.44063591e-02 8.57732477e-02 3.76648466e-01 8.87929238e-01\n",
+      " 1.23895217e+00 1.25035519e+00 8.86075297e-01 3.57954944e-01\n",
+      " 3.26138273e-01 8.93522235e-01 1.31510628e+00 1.35238794e+00\n",
+      " 9.61461921e-01 4.39577541e-01 1.13927428e-01 3.84975505e-02\n",
+      " 5.36327846e-02 1.69787235e-01 5.42599817e-01 1.06182197e+00\n",
+      " 1.37321399e+00 1.25057057e+00 8.18406790e-01 2.61721288e-01\n",
+      " 1.82330468e-01 7.59475951e-01 1.28679207e+00 1.44958046e+00\n",
+      " 1.10688967e+00 5.57203861e-01 2.14130381e-01 1.47069378e-01\n",
+      " 2.15676089e-01 4.32815974e-01 8.96862446e-01 1.36377634e+00\n",
+      " 1.49075578e+00 1.15939639e+00 6.22067020e-01 1.26992220e-01\n",
+      " 5.84152687e-02 4.67427550e-01 1.09806340e+00 1.51210615e+00\n",
+      " 1.42226714e+00 9.41197788e-01 5.57709665e-01 4.99719957e-01\n",
+      " 6.56042283e-01 1.00399766e+00 1.40647827e+00 1.61266601e+00\n",
+      " 1.41656614e+00 8.81148097e-01 3.21861387e-01 3.67738419e-02\n",
+      " 1.09871555e-02 1.48898601e-01 6.49790437e-01 1.29661503e+00\n",
+      " 1.64543706e+00 1.56182002e+00 1.31738978e+00 1.25782812e+00\n",
+      " 1.39819160e+00 1.60791875e+00 1.72751589e+00 1.54867872e+00\n",
+      " 1.01832667e+00 4.19518357e-01 9.27781289e-02 7.52478765e-03\n",
+      " 2.67797390e-03 2.13532309e-02 1.63836169e-01 6.27896414e-01\n",
+      " 1.26470542e+00 1.69852879e+00 1.80189263e+00 1.79891885e+00\n",
+      " 1.80963883e+00 1.76736086e+00 1.51130342e+00 9.40219832e-01\n",
+      " 3.74622653e-01 8.96866275e-02 1.24228554e-02 1.88855453e-03\n",
+      " 7.41913845e-05 1.44583295e-03 1.03138830e-02 7.97420072e-02\n",
+      " 3.19437704e-01 7.96441981e-01 1.28306524e+00 1.52049088e+00\n",
+      " 1.42675380e+00 1.03130694e+00 5.32240296e-01 1.74166387e-01\n",
+      " 3.57644515e-02 5.52804884e-03 4.36592998e-04 0.00000000e+00] [5.01831943e-02 7.94067978e-02 1.46557840e-01 2.65647083e-01\n",
+      " 4.42514005e-01 6.35446403e-01 7.40809984e-01 7.48738636e-01\n",
+      " 7.52390278e-01 6.78481391e-01 4.82039985e-01 2.96132757e-01\n",
+      " 1.02346313e-01 6.83277088e-02 3.69370599e-03 0.00000000e+00\n",
+      " 5.53565099e-02 9.36503460e-02 2.40125530e-01 4.83649336e-01\n",
+      " 7.27843882e-01 8.02361784e-01 6.94405602e-01 6.09963931e-01\n",
+      " 6.53150530e-01 7.59105539e-01 8.07053646e-01 6.42080595e-01\n",
+      " 3.75684973e-01 1.82507577e-01 5.61173227e-02 1.83871321e-04\n",
+      " 9.07816459e-02 1.92974293e-01 4.17185861e-01 7.08023066e-01\n",
+      " 8.35551210e-01 7.30746680e-01 6.28303199e-01 6.33148730e-01\n",
+      " 6.86422879e-01 6.72295575e-01 7.51810460e-01 8.24819152e-01\n",
+      " 6.63939317e-01 3.74384437e-01 1.38259104e-01 2.98759453e-02\n",
+      " 9.45978015e-02 2.82882898e-01 6.06443755e-01 8.42580352e-01\n",
+      " 8.02902675e-01 6.81004225e-01 7.48421420e-01 8.30008668e-01\n",
+      " 8.54997061e-01 8.14299181e-01 7.25998250e-01 7.81295141e-01\n",
+      " 8.29495034e-01 6.20324115e-01 3.01375542e-01 5.58416741e-02\n",
+      " 1.09417252e-01 4.42042417e-01 7.86772799e-01 8.55073378e-01\n",
+      " 7.26212053e-01 7.50122086e-01 8.60422875e-01 8.48874386e-01\n",
+      " 7.93833953e-01 8.30541296e-01 8.38632721e-01 7.47181588e-01\n",
+      " 8.23636911e-01 8.08128848e-01 5.21721653e-01 1.51250442e-01\n",
+      " 1.93387753e-01 6.43821973e-01 8.67254583e-01 7.99550656e-01\n",
+      " 7.32580757e-01 8.37006143e-01 8.59377161e-01 7.10370392e-01\n",
+      " 5.93281478e-01 6.77237381e-01 8.31691047e-01 8.22743584e-01\n",
+      " 7.88112898e-01 8.57614333e-01 7.19446532e-01 2.69347185e-01\n",
+      " 3.32469930e-01 7.92955639e-01 8.70126721e-01 7.69744257e-01\n",
+      " 7.95027442e-01 8.64688939e-01 7.76931015e-01 5.26795212e-01\n",
+      " 3.76288853e-01 4.76975183e-01 7.55498404e-01 8.54225193e-01\n",
+      " 7.91521083e-01 8.39500950e-01 8.31954884e-01 4.23838775e-01\n",
+      " 4.87260845e-01 8.63875733e-01 8.48146484e-01 7.73179435e-01\n",
+      " 8.53348543e-01 8.56529135e-01 6.26814873e-01 3.57237766e-01\n",
+      " 2.32348353e-01 3.50930230e-01 6.85481872e-01 8.53681409e-01\n",
+      " 8.22068338e-01 8.23407286e-01 8.74309244e-01 5.52863075e-01\n",
+      " 6.01879520e-01 8.85329537e-01 8.24054851e-01 7.97569861e-01\n",
+      " 8.79529500e-01 8.04380858e-01 4.88745038e-01 2.33983440e-01\n",
+      " 1.33017454e-01 2.82956895e-01 6.47850956e-01 8.55552599e-01\n",
+      " 8.33134462e-01 8.14142442e-01 8.79913841e-01 6.23571306e-01\n",
+      " 6.27569490e-01 8.87970601e-01 8.08726423e-01 7.99593425e-01\n",
+      " 8.83656246e-01 7.40923981e-01 3.96059201e-01 1.58269198e-01\n",
+      " 1.35838287e-01 3.17543955e-01 6.64790873e-01 8.69850402e-01\n",
+      " 8.25187345e-01 8.15239950e-01 8.76049271e-01 5.99366076e-01\n",
+      " 5.61142003e-01 8.79585830e-01 8.00370123e-01 7.79866575e-01\n",
+      " 8.71709587e-01 7.07802103e-01 3.70598827e-01 2.23004816e-01\n",
+      " 2.61963220e-01 4.53549310e-01 7.48382284e-01 8.66443539e-01\n",
+      " 7.69941925e-01 8.21902719e-01 8.59305117e-01 4.99869325e-01\n",
+      " 3.90802904e-01 8.35333743e-01 8.18025729e-01 7.25020016e-01\n",
+      " 8.41314374e-01 7.59500752e-01 5.11963258e-01 4.41477363e-01\n",
+      " 5.16327319e-01 6.84615740e-01 8.42479455e-01 7.77225607e-01\n",
+      " 7.07817668e-01 8.39443523e-01 7.73448550e-01 3.34179648e-01\n",
+      " 2.05059887e-01 6.82114171e-01 8.41100239e-01 6.83051455e-01\n",
+      " 7.26656777e-01 8.24251292e-01 7.46894437e-01 7.28383103e-01\n",
+      " 7.91140465e-01 8.23448894e-01 7.65529080e-01 6.35565882e-01\n",
+      " 7.39287816e-01 8.34222520e-01 5.75417581e-01 1.70617432e-01\n",
+      " 9.88322726e-02 3.81477332e-01 7.51906377e-01 7.80637065e-01\n",
+      " 5.64037734e-01 6.42586572e-01 7.48388200e-01 7.76029559e-01\n",
+      " 7.33293530e-01 6.32139443e-01 5.10854161e-01 6.55950534e-01\n",
+      " 8.08098822e-01 6.34702207e-01 3.08181445e-01 7.70392972e-02\n",
+      " 4.28692844e-02 1.49311285e-01 3.88847519e-01 7.09470527e-01\n",
+      " 7.47951493e-01 5.38041381e-01 4.69835347e-01 4.76198412e-01\n",
+      " 4.70671688e-01 5.17581162e-01 6.74908715e-01 7.69088217e-01\n",
+      " 5.83117081e-01 2.99820961e-01 9.71949783e-02 5.03024813e-02\n",
+      " 2.30172010e-03 3.20085429e-02 8.28907217e-02 2.53452180e-01\n",
+      " 4.80680529e-01 6.58957361e-01 6.70086667e-01 6.43519839e-01\n",
+      " 6.63052696e-01 6.75994834e-01 5.86500179e-01 3.56627973e-01\n",
+      " 1.71592912e-01 5.67742305e-02 1.20250040e-02 0.00000000e+00]\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(mu[0], sig[0])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## A2- Log-vraisemblance d'une image pour une classe\n",
+    "\n",
+    "Écrivez une fonction `log_likelihood : float np.array x float np.array x float np.array -> float` qui, étant donné une image (donc un tableau de 256 nombres réels) et un couple de paramètres `( array ( [μ0,…,μ255] ), array ( [σ20,…,σ255] ) )`, renvoie la log-vraisemblance qu'aurait l'image selon cet ensemble de $μ_i$ et $σ_i$ (correspondant à une classe de chiffre). Rappelez-vous que (en mettant $-\\frac{1}{2}$ en facteur) : \n",
+    "\n",
+    "$$\\log(p(x_0,\\cdots,x_{255})=\\sum_{i=0}^{255} \\log p(x_i)=-\\frac{1}{2}\\sum_{i=0}^{255} \\left[ \\log(2\\pi \\sigma^2_i) + \\frac{(x_i-\\mu_i)^2}{\\sigma_i^2} \\right]$$\n",
+    "\n",
+    "Notez que le module `np` contient une constante `np.pi` ainsi que toutes les fonctions mathématiques classiques directement applicables sur des vecteurs. Vous pouvez donc éventuellement coder la ligne précédente sans boucle, en une ligne.\n",
+    "\n",
+    "**Attention**: dans la matrice `sig` calculée dans la question précédente, pour certains pixels de certaines classes, la valeur de $σ^2$ est égale à $0$ (toutes les images de la base d'apprentissage avaient exactement la même valeur sur ce pixel). \n",
+    "* cette valeur pose problème dans le calcul précédent (division par 0)\n",
+    "* Deux possibilités pour traiter ce problème (que vous devrez expérimenter) :\n",
+    "    * faible valeur par défaut de $\\sigma$ reflétant une variance très faible mais évitant la division par 0 (usage de  `np.maximum`par exemple)\n",
+    "    * vraisemblance de 1 pour le ou les pixels impactés (i.e., on les ignore dans le calcul, via `np.where` par exemple) "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def log_likelihood(img, mu, sig, eps=1e-5, img_filtered=None):\n",
+    "    \"\"\"\n",
+    "    Calculates the log-likelihood of an image belonging to a class.\n",
+    "\n",
+    "    Args:\n",
+    "        img (np.array): A numpy array representing the image (256 values).\n",
+    "        mu (np.array): A numpy array representing the mean vector of the class (256 values).\n",
+    "        sig (np.array): A numpy array representing the standard deviation vector of the class (256 values).\n",
+    "        eps (float, optional): A small value to avoid division by zero (default: 1e-5).\n",
+    "        img_filtered (np.array, optional): Pre-filtered image array (if already calculated).\n",
+    "\n",
+    "    Returns:\n",
+    "        float: The log-likelihood of the image belonging to the class.\n",
+    "\n",
+    "    Raises:\n",
+    "        ValueError: If the lengths of img, mu, and sig are not equal.\n",
+    "    \"\"\"\n",
+    "\n",
+    "    # 1. Input Validation\n",
+    "    validate_input_arrays(img, mu, sig)\n",
+    "\n",
+    "    # 2. Handle Zero Variance (if img_filtered not provided)\n",
+    "    if img_filtered is None:\n",
+    "        valid_mask, mu_filtered, sig_filtered, img_filtered = handle_zero_variance(sig, mu, img)\n",
+    "\n",
+    "    # 3. Calculate Log-Likelihood Terms\n",
+    "    log_likelihood_term1, log_likelihood_term2 = calculate_log_likelihood_terms(mu_filtered, sig_filtered, img_filtered)\n",
+    "\n",
+    "    # 4. Combine Terms and Return Result\n",
+    "    return combine_and_return_log_likelihood(log_likelihood_term1, log_likelihood_term2)\n",
+    "\n",
+    "\n",
+    "# Helper functions for improved readability\n",
+    "def validate_input_arrays(img, mu, sig):\n",
+    "    if len(img) != len(mu) or len(img) != len(sig):\n",
+    "        raise ValueError(\"Input arrays img, mu, and sig must have the same length.\")\n",
+    "\n",
+    "\n",
+    "def handle_zero_variance(sig, mu, img):\n",
+    "    valid_mask = sig != 0\n",
+    "    mu_filtered = mu[valid_mask]\n",
+    "    sig_filtered = sig[valid_mask]\n",
+    "    img_filtered = img[valid_mask]\n",
+    "    return valid_mask, mu_filtered, sig_filtered, img_filtered\n",
+    "\n",
+    "\n",
+    "def calculate_log_likelihood_terms(mu_filtered, sig_filtered, img_filtered):\n",
+    "    log_likelihood_term1 = -0.5 * np.sum(np.log(2 * np.pi * sig_filtered**2))\n",
+    "    log_likelihood_term2 = -0.5 * np.sum((img_filtered - mu_filtered)**2 / sig_filtered**2)\n",
+    "    return log_likelihood_term1, log_likelihood_term2\n",
+    "\n",
+    "\n",
+    "def combine_and_return_log_likelihood(term1, term2):\n",
+    "    return term1 + term2\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[-111.93403895332246, -1714626013.0783024, -364.5763299093203, -486.4264827063434, -544.177675258672, -387.35653393835173, -59643.710427991835, -580383.1639219399, -303.4042118104733, -13472.962789336656]\n",
+      "[-111.93403895332246, -1714626013.0783024, -364.5763299093203, -486.4264827063434, -544.177675258672, -387.35653393835173, -59643.710427991835, -580383.1639219399, -303.4042118104733, -13472.962789336656]\n"
+     ]
+    }
+   ],
+   "source": [
+    "print([log_likelihood(X_train[0], mu[i], sig[i],1e-5) for i in range(10)]) \n",
+    "# vraisemblance de l'image 0 pour toutes les classes pour defsig=1e-5\n",
+    "\n",
+    "print([log_likelihood(X_train[0], mu[i], sig[i],-1) for i in range(10)]) \n",
+    "# vraisemblance de l'image 0 pour toutes les classes pour defsig=-1"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Check : \n",
+    "le code ci-dessus avec une valeur de $1e-5$ pour les sigmas nuls doit donner:\n",
+    "\n",
+    "```\n",
+    "[-90.69963035168726, -231211311074.5327, -364.8317101985202, -487.01085544875843, -513.128064745155, -387.75946984198, -59610.117733618186, -75567222244.77489, -271.980542616389, -857252055.4774221]\n",
+    "```\n",
+    "\n",
+    "Avec une vraisemblance de 1 pour les pixels problématiques:\n",
+    "```\n",
+    "[-111.88760421521835, -1716629080.989729, -364.83171019852006, -487.01085544875855, -544.9100255404516, -387.7594698419803, -59747.8395637312, -581523.2639945432, -303.762503411686, -13497.825910916881]\n",
+    "```\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## A3- Classification d'une image\n",
+    "Écrire une fonction `classify_image : float np.array x float np.array x float np.array -> int` qui, étant donnée une image et l'ensemble de paramètres déterminés dans les questions précédentes, renvoie la classe la plus probable de l'image, c'est-à-dire celle dont la log-vraisemblance est la plus grande."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def classify_image(img, mu, sig, defsig=1e-5):\n",
+    "    \"\"\"\n",
+    "    Classifie une image en calculant sa log-vraisemblance pour chaque classe et en choisissant la classe avec la plus haute log-vraisemblance.\n",
+    "\n",
+    "    Paramètres:\n",
+    "    img (np.array): Vecteur de pixels représentant une image.\n",
+    "    mu (np.array): Matrice des moyennes pour chaque classe (C classes x 256 pixels).\n",
+    "    sig (np.array): Matrice des écarts-types pour chaque classe (C classes x 256 pixels).\n",
+    "    defsig (float): Valeur minimale de l'écart-type pour éviter les divisions par zéro.\n",
+    "\n",
+    "    Retourne:\n",
+    "    int: L'indice de la classe avec la plus haute log-vraisemblance pour l'image donnée.\n",
+    "    \"\"\"\n",
+    "    # Calcul de la log-vraisemblance pour chaque classe\n",
+    "    log_likelihoods = [log_likelihood(img, mu[c], sig[c], defsig) for c in range(mu.shape[0])]\n",
+    "    # Retour de l'indice de la classe ayant la log-vraisemblance maximale\n",
+    "    return np.argmax(log_likelihoods)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# check\n",
+    "classify_image(X_train[0], mu, sig, -1)\n",
+    "# l'image 0 est de la classe 0"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## A4- Classification de toutes les images\n",
+    "Écrire une fonction `classify_all_images : float np.array x float np.array x float np.array -> float np.array` qui, étant donné un tableau $X$ des images ($N \\times 256$) et l'ensemble de paramètres déterminés dans les questions précédentes, renvoie un tableau $\\hat Y$ qui donne la prédiction de classe pour toutes les images"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def classify_all_images(X, mu, sig, defsig=1e-5):\n",
+    "    \"\"\"\n",
+    "    Classifie toutes les images données en utilisant les paramètres de distribution normale.\n",
+    "\n",
+    "    Paramètres:\n",
+    "    X (np.ndarray): Matrice des images (N x 256), où N est le nombre d'images.\n",
+    "    mu (np.ndarray): Matrice des moyennes pour chaque classe (C classes x 256 pixels).\n",
+    "    sig (np.ndarray): Matrice des écarts-types pour chaque classe (C classes x 256 pixels).\n",
+    "    defsig (float): Valeur minimale de l'écart-type pour éviter les divisions par zéro.\n",
+    "\n",
+    "    Retourne:\n",
+    "    np.array: Vecteur des prédictions de classe pour chaque image.\n",
+    "    \"\"\"\n",
+    "    # Applique classify_image à chaque ligne de X\n",
+    "    classify_func = lambda img: classify_image(img, mu, sig, defsig)\n",
+    "    pred = np.apply_along_axis(classify_func, 1, X)\n",
+    "\n",
+    "    return pred\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[0 9 7 ... 6 3 2]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# check\n",
+    "Y_train_hat = classify_all_images(X_train, mu, sig, -1)\n",
+    "\n",
+    "print(Y_train_hat) # doit rendre: [0 9 7 ... 6 3 2]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## A5-Matrice de confusion et affichage du résultat des classifications\n",
+    "\n",
+    "La matrice de confusion est de la forme $C \\times C$ où $C$ est le nombre de classe. Les lignes sont les vraies classes, les colonnes sont les classes prédites. Chaque case (i,j) contient le nombre d'images correspondant à la vraie classe i et à la prédiction j.\n",
+    "Si votre classifieur est performant, vous devriez observer des pics sur la diagonale. \n",
+    "\n",
+    "La fonction `matrice_confusion(Y, Y_hat)` prend en argument un vecteur d'étiquettes réelles et un vecteur de même taille d'étiquettes prédites et retourne la matrice de confusion.\n",
+    "\n",
+    "Vous devriez obtenir une matrice de la forme:\n",
+    "<img src=\"mat_conf_train.png\" title=\"Matrice de confusion\">"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def matrice_confusion(Y, Y_hat):\n",
+    "    n_classes = len(np.unique(Y))\n",
+    "    \n",
+    "    confusion_matrix = np.zeros((n_classes, n_classes))\n",
+    "    \n",
+    "    for y, y_hat in zip(Y, Y_hat):\n",
+    "        confusion_matrix[int(y), int(y_hat)] += 1\n",
+    "    \n",
+    "    return confusion_matrix"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Taux de bonne classification: 0.8099213356879114\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<matplotlib.image.AxesImage at 0x7f8e20b4b8e0>"
+      ]
+     },
+     "execution_count": 15,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# affichage de la matrice de confusion\n",
+    "m = matrice_confusion(Y_train, Y_train_hat)\n",
+    "\n",
+    "print(\"Taux de bonne classification: {}\".format(np.where(Y_train == Y_train_hat, 1, 0).mean()))\n",
+    "plt.figure()\n",
+    "\n",
+    "plt.imshow(m)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## A6- Ensemble d'apprentissage, ensemble de test\n",
+    "\n",
+    "Dans la procédure que nous avons suivie jusqu'ici, nous avons triché. Les mêmes données servent à apprendre les paramètres et à évaluer le modèle. Evidemment, le modèle est parfaitement adapté et les performances sur-estimées.\n",
+    "\n",
+    "Afin de réduire ce biais, nous allons maintenant évaluer les performances sur les données de test. Les performances devraient être plus basses... Mais plus réalistes.\n",
+    "\n",
+    "Effectuer ces calculs et afficher le taux de bonne classification et la matrice de confusion.\n",
+    "\n",
+    "**Attention:** il faut donc utiliser les paramètres appris sur de nouvelles données sans réapprendre des paramètres spécifiques sinon ça ne marche pas\n",
+    "\n",
+    "Afin de mieux comprendre les erreurs (et de vérifier vos connaissances sur numpy): afficher une image de chiffre mal classée, son étiquette prédite et son étiquette réelle. \n",
+    "Normalement, vous devez retrouver automatiquement que le premier chiffre mal classé est l'image 10:\n",
+    "\n",
+    "<img src=\"bad_classif.png\" title=\"exemple d'erreur\">"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Taux de bonne classification : 79.34%\n",
+      "Matrice de confusion :  [[67. 73. 46. 34. 40. 23. 69. 29. 73. 73.]\n",
+      " [47. 53. 42. 29. 23. 24. 38. 32. 51. 77.]\n",
+      " [53. 32. 36. 25. 26. 20. 27. 22. 21. 44.]\n",
+      " [48. 45. 31. 18. 16. 11. 33. 23. 27. 35.]\n",
+      " [43. 30. 20. 20. 12. 11. 25. 21. 27. 36.]\n",
+      " [45. 29. 21. 26. 16. 13. 19. 17. 28. 34.]\n",
+      " [43. 37. 35. 17. 14. 15. 21. 19. 32. 41.]\n",
+      " [47. 32. 26. 18. 19.  8. 22. 19. 32. 41.]\n",
+      " [26. 36. 20. 17. 18.  9. 27. 14. 29. 38.]\n",
+      " [31. 38. 25. 16. 26. 11. 34. 28. 32. 27.]]\n",
+      "Index :  10\n",
+      "Class réel :  5\n",
+      "Class prédite :  6\n"
+     ]
+    }
+   ],
+   "source": [
+    "Y_train_hat = classify_all_images(X_test, mu, sig, -1)\n",
+    "correct_predictions = np.sum(Y_train_hat == Y_test)\n",
+    "accuracy = correct_predictions / len(Y_test)\n",
+    "print(f\"Taux de bonne classification : {accuracy * 100:.2f}%\")\n",
+    "print(\"Matrice de confusion : \" , matrice_confusion(Y_train , Y_train_hat))\n",
+    "\n",
+    "first_incohrence_index = np.where(Y_train_hat != Y_test)[0][0]\n",
+    "print(\"Index : \", first_incohrence_index)\n",
+    "print(\"Class réel : \", Y_test[first_incohrence_index])\n",
+    "print(\"Class prédite : \", Y_train_hat[first_incohrence_index])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Autres modélisations possibles pour les images\n",
+    "\n",
+    "## B. Modélisation par une loi de Bernoulli\n",
+    "\n",
+    "Soit les indices $i$ donnant les images et les indices $j$ référant aux pixels dans l'image, nous cherchons à déterminer la probabilité d'illumination d'un pixel $j$ pour une collection d'image (d'une seule classe, par exemple les $0$).\n",
+    "\n",
+    "Collection de $0$:\n",
+    "$$ X = \\{\\mathbf{x_i}\\}_{i = 1,\\ldots, N}, \\qquad \\mathbf{x_i} \\in \\{0,1\\}^{256}$$\n",
+    "\n",
+    "Modélisation de la variable de Bernoulli $X_j$, valeur du pixel $j$ en écriture factorisée:\n",
+    "$$ p(X_j = x_{ij}) = p_j^{x_{ij}} (1-p_j)^{(1-x_{ij})} = \\left\\{\n",
+    "\\begin{array}{ccc}\n",
+    "p_j & \\mbox{ si } x_{ij} = 1 \\\\\n",
+    "1-p_j & \\mbox{ si } x_{ij} = 0 \\\\\n",
+    "\\end{array}\n",
+    "\\right.$$\n",
+    "\n",
+    "Expression de la vraisemblance\n",
+    "\n",
+    "Maximisation de la vraisemblance $\\Rightarrow$ $\\nabla_{\\theta} \\mathcal L(X, \\theta) = 0$:\n",
+    "\n",
+    "$$p_j^\\star = \\frac{\\sum_i x_{ij}}{N} $$\n",
+    "\n",
+    "Intuitif: nombre de $1$ pour le pixel $j$ divisé par le nombre d'image = pourcentage d'illumination du pixel $j$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAP8AAAD4CAYAAAAjDTByAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjMuNCwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy8QVMy6AAAACXBIWXMAAAsTAAALEwEAmpwYAAAM10lEQVR4nO3da6xl5V3H8e9PLsWhVEBsyy0CDZJgU4FMkLYGG5GWImFq4guI1dE2IU1Ewdi005DYvrRW67VpgwWlSiCxBUsaEAi2aUxk0mEcbh3KTYSBKYM2gVoiF/v3xV4kh9NzZs7Z6zLnzPP9JJN9Wc/e+z/P2r+z1l57PftJVSGpPT+2vwuQtH8YfqlRhl9qlOGXGmX4pUYdPOWLHZo31GEcPuVLrtrPvOPF/V1Csx6+b8P+LmHd+19+wMv1UlbSdtLwH8bh/HzOm/IlV+3223fs7xKa9b7jztjfJax7W+uuFbd1t19qlOGXGtUr/EkuSPKdJI8m2TJUUZLGN3f4kxwEfA54P3A6cGmS04cqTNK4+mz5zwYerarHq+pl4EZg0zBlSRpbn/AfDzy14Pau7r7XSXJZkm1Jtr3CSz1eTtKQ+oR/qe8Sf2SIYFVdXVUbq2rjIbyhx8tJGlKf8O8CTlxw+wTgmX7lSJpKn/B/Czg1yclJDgUuAW4ZpixJY5v7DL+qejXJ5cDtwEHAtVX14GCVSRpVr9N7q+pW4NaBapE0Ic/wkxo16cCeKd3+zI79XYJWacp15iAit/xSswy/1CjDLzXK8EuNMvxSowy/1CjDLzXK8EuNMvxSowy/1CjDLzXK8EuNOmAH9kh7M+8gogNpQJBbfqlRhl9qlOGXGtVnxp4Tk3w9yc4kDya5YsjCJI2rzwG/V4E/qKrtSY4A7klyZ1V9e6DaJI1o7i1/Ve2uqu3d9e8DO1lixh5Ja9MgX/UlOQk4E9i6xLLLgMsADmPDEC8naQC9D/gleSPwFeDKqnph8XKn65LWpl7hT3IIs+BfX1U3DVOSpCn0Odof4BpgZ1V9driSJE2hz5b/3cBvAL+UZEf378KB6pI0sj5z9f0rS0/TLWkd8Aw/qVGO6pNW4UAaDeiWX2qU4ZcaZfilRhl+qVGGX2qU4ZcaZfilRhl+qVGGX2qU4ZcaZfilRhl+qVEO7NFezTsgZd4BMJqOW36pUYZfapThlxo1xE93H5Tk35N8bYiCJE1jiC3/Fcxm65G0jvT93f4TgF8BvjhMOZKm0nfL/+fAx4Af9i9F0pT6TNpxEbCnqu7ZR7vLkmxLsu0VXpr35SQNrO+kHRcneQK4kdnkHf+wuJFz9UlrU58puj9RVSdU1UnAJcC/VNUHB6tM0qj8nl9q1CDn9lfVN4BvDPFckqbhll9qlKP6pAnMM8px7Cm+3PJLjTL8UqMMv9Qowy81yvBLjTL8UqMMv9Qowy81yvBLjTL8UqMMv9Qowy81yvBLjXJUn0Yx9oi0hZwXcD5u+aVGGX6pUYZfalTfGXuOTPLlJA8l2ZnknUMVJmlcfQ/4/QXwz1X1a0kOBTYMUJOkCcwd/iRvAs4Ffgugql4GXh6mLElj67PbfwrwHPC33RTdX0xy+OJGTtclrU19wn8wcBbw+ao6E/gBsGVxI6frktamPuHfBeyqqq3d7S8z+2MgaR3oM1ffd4GnkpzW3XUe8O1BqpI0ur5H+38XuL470v848Nv9S5I0hV7hr6odwMZhSpE0pXUxsMeBG/1NOdBG64On90qNMvxSowy/1CjDLzXK8EuNMvxSowy/1CjDLzXK8EuNMvxSowy/1CjDLzXK8EuNMvxSowy/1CjDLzXK8EuN6jtd1+8neTDJA0luSHLYUIVJGtfc4U9yPPB7wMaqejtwEHDJUIVJGlff3f6DgR9PcjCzefqe6V+SpCn0+d3+p4E/AZ4EdgPPV9Udi9s5XZe0NvXZ7T8K2AScDBwHHJ7kg4vbOV2XtDb12e3/ZeA/quq5qnoFuAl41zBlSRpbn/A/CZyTZEOSMJuua+cwZUkaW5/P/FuZTc65Hbi/e66rB6pL0sj6Ttf1SeCTA9UiaUKe4Sc1yvBLjTL8UqMMv9Qowy81yvBLjTL8UqMMv9Qowy81yvBLjTL8UqMMv9Qowy81yvBLjeo1pHcq7zvujFU/5vZndgxeh8Z1IK+zed7DY3PLLzXK8EuNMvxSo/YZ/iTXJtmT5IEF9x2d5M4kj3SXR41bpqShrWTL/3fABYvu2wLcVVWnAnd1tyWtI/sMf1V9E/jeors3Add1168DPjBsWZLGNu9n/rdU1W6A7vLNyzV0ui5pbRr9gJ/TdUlr07zhfzbJsQDd5Z7hSpI0hXnDfwuwubu+GfjqMOVImspKvuq7Afg34LQku5J8GPgj4PwkjwDnd7clrSP7PLe/qi5dZtF5A9ciaUKe4Sc1al2M6juQR3sdqFxna59bfqlRhl9qlOGXGmX4pUYZfqlRhl9qlOGXGmX4pUYZfqlRhl9qlOGXGmX4pUati4E9TtfVn/0xjLU47da83PJLjTL8UqMMv9Soeafr+kySh5Lcl+TmJEeOWqWkwc07XdedwNur6h3Aw8AnBq5L0sjmmq6rqu6oqle7m3cDJ4xQm6QRDfGZ/0PAbcstdLouaW3qFf4kVwGvAtcv18bpuqS1ae6TfJJsBi4CzquqGq4kSVOYK/xJLgA+DvxiVb04bEmSpjDvdF1/DRwB3JlkR5IvjFynpIHNO13XNSPUImlCnuEnNcrwS40y/FKjDL/UKMMvNcrwS40y/FKjDL/UKMMvNcrwS40y/FKjDL/UKMMvNcrwS40y/FKj1sVcffOYd04157Rrw4E059683PJLjTL8UqPmmq5rwbKPJqkkx4xTnqSxzDtdF0lOBM4Hnhy4JkkTmGu6rs6fAR8D/M1+aR2a6zN/kouBp6vq3hW0dbouaQ1a9Vd9STYAVwHvXUn7qroauBrgTTnavQRpjZhny/824GTg3iRPMJuhd3uStw5ZmKRxrXrLX1X3A29+7Xb3B2BjVf3XgHVJGtm803VJWufmna5r4fKTBqtG0mQ8w09q1AE7sGde8wz4cDDQMBxsMy23/FKjDL/UKMMvNcrwS40y/FKjDL/UKMMvNcrwS40y/FKjDL/UKMMvNcrwS40y/FKjUjXdz+oleQ74z2UWHwOshV8Dso7Xs47XW+t1/HRV/dRKnmDS8O9Nkm1VtdE6rMM6pqnD3X6pUYZfatRaCv/V+7uAjnW8nnW83gFTx5r5zC9pWmtpyy9pQoZfatSk4U9yQZLvJHk0yZYllifJX3bL70ty1gg1nJjk60l2JnkwyRVLtHlPkueT7Oj+/eHQdSx4rSeS3N+9zrYllo/aJ0lOW/D/3JHkhSRXLmozWn8kuTbJniQPLLjv6CR3Jnmkuzxqmcfu9f00QB2fSfJQ1+83JzlymcfudR0OUMenkjy9oP8vXOaxq+uPqprkH3AQ8BhwCnAocC9w+qI2FwK3AQHOAbaOUMexwFnd9SOAh5eo4z3A1ybqlyeAY/ayfPQ+WbSOvsvsRJFJ+gM4FzgLeGDBfX8MbOmubwE+Pc/7aYA63gsc3F3/9FJ1rGQdDlDHp4CPrmDdrao/ptzynw08WlWPV9XLwI3ApkVtNgFfqpm7gSOTHDtkEVW1u6q2d9e/D+wEjh/yNQY2ep8scB7wWFUtdxbm4Krqm8D3Ft29Cbiuu34d8IElHrqS91OvOqrqjqp6tbt5N7NJaUe1TH+sxKr7Y8rwHw88teD2Ln40dCtpM5gkJwFnAluXWPzOJPcmuS3Jz45VA1DAHUnuSXLZEsun7JNLgBuWWTZVfwC8pap2w+yPNQsmhl1g0vcK8CFme2BL2dc6HMLl3cePa5f5GLTq/pgy/FnivsXfM66kzSCSvBH4CnBlVb2waPF2Zru+Pwf8FfBPY9TQeXdVnQW8H/idJOcuLnWJxwzeJ0kOBS4G/nGJxVP2x0pN+V65CngVuH6ZJvtah319HngbcAawG/jTpcpc4r699seU4d8FnLjg9gnAM3O06S3JIcyCf31V3bR4eVW9UFX/012/FTgkyTFD19E9/zPd5R7gZma7bwtN0ifM3rjbq+rZJWqcrD86z7720aa73LNEm6neK5uBi4Bfr+7D9WIrWIe9VNWzVfV/VfVD4G+Wef5V98eU4f8WcGqSk7utzCXALYva3AL8ZneE+xzg+dd2/4aSJMA1wM6q+uwybd7atSPJ2cz66b+HrKN77sOTHPHadWYHmB5Y1Gz0PulcyjK7/FP1xwK3AJu765uBry7RZiXvp16SXAB8HLi4ql5cps1K1mHfOhYe4/nVZZ5/9f0xxBHKVRzJvJDZ0fXHgKu6+z4CfKS7HuBz3fL7gY0j1PALzHaH7gN2dP8uXFTH5cCDzI6Y3g28a6T+OKV7jXu719tffbKBWZh/YsF9k/QHsz84u4FXmG29Pgz8JHAX8Eh3eXTX9jjg1r29nwau41Fmn6Nfe598YXEdy63Dgev4+27d38cs0McO0R+e3is1yjP8pEYZfqlRhl9qlOGXGmX4pUYZfqlRhl9q1P8DYbPcez/7gVoAAAAASUVORK5CYII=\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "Xb_train = np.where(X_train>0, 1, 0)\n",
+    "Xb_test = np.where(X_test>0, 1, 0)\n",
+    "\n",
+    "plt.figure()\n",
+    "plt.imshow(Xb_train[0].reshape(16,16))\n",
+    "\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### B-1: Ecrire la fonction d'apprentissage des paramètres qui retourne la matrice theta suivante:\n",
+    "\n",
+    "$ \\theta^\\star = \n",
+    " \\left[\n",
+    " \\begin{array}{ccc}\n",
+    "     \\left[p_0^\\star, \\ldots, p_{255}^\\star\\right] & \\mbox{Paramètres optimaux de la classe 0 au sens du max de vraisemblance} \\\\\n",
+    "     \\left[p_0^\\star, \\ldots, p_{255}^\\star\\right] & \\mbox{Paramètres optimaux de la classe 1 au sens du max de vraisemblance} \\\\\n",
+    "\\vdots & \\\\\n",
+    "     \\left[p_0^\\star, \\ldots, p_{255}^\\star\\right] & \\mbox{Paramètres optimaux de la classe 9 au sens du max de vraisemblance} \\\\\n",
+    "\\end{array}\n",
+    " \\right]\n",
+    " $\n",
+    " \n",
+    " Il faut ensuite calculer les :\n",
+    " \n",
+    " $ \\log p (\\mathbf{x_i} | \\theta^{(c)}) = \\sum_j \\log p(X_j = x_{ij})  = \\sum_j {x_{ij}} \\log p_j + {(1-x_{ij})}\\log(1-p_j)$\n",
+    " \n",
+    " Faire passer les $N$ images dans les $C$ modèles donne un tableau de la forme :\n",
+    " \n",
+    " $ \\log p (X | \\theta) =  \\left[\n",
+    " \\begin{array}{cccc}\n",
+    " \\log p (\\mathbf{x_0} | \\theta^{(0)}) &  \\log p (\\mathbf{x_0} | \\theta^{(1)}) & \\ldots &  \\log p (\\mathbf{x_0} | \\theta^{(9)}) \\\\\n",
+    " & \\vdots & \\\\\n",
+    " \\log p (\\mathbf{x_N} | \\theta^{(0)}) &  \\log p (\\mathbf{x_N} | \\theta^{(1)}) & \\ldots &  \\log p (\\mathbf{x_N} | \\theta^{(9)}) \\\\\n",
+    "  \\end{array}\n",
+    " \\right]\n",
+    " $\n",
+    " \n",
+    " Chaque ligne donne pour une image sa probabilité d'appartenance à chaque classe $c$.\n",
+    " Un argmax par ligne donne une estimation de la classe."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def learnBernoulli(X, Y):\n",
+    "    \"\"\"\n",
+    "    Apprend les paramètres du modèle Bernoulli pour la classification des images.\n",
+    "\n",
+    "    Paramètres :\n",
+    "    X (np.ndarray): Matrice des caractéristiques des images (N images x M caractéristiques).\n",
+    "    Y (np.array): Vecteur des étiquettes de classe pour chaque image.\n",
+    "\n",
+    "    Retourne :\n",
+    "    np.ndarray: Matrice des paramètres theta de dimensions (10, M) où chaque ligne correspond\n",
+    "                aux paramètres de probabilité de chaque classe (0-9).\n",
+    "    \"\"\"\n",
+    "    \n",
+    "    num_classes = 10\n",
+    "    num_features = X.shape[1]\n",
+    "    theta = np.zeros((num_classes, num_features))\n",
+    "    \n",
+    "    for c in range(num_classes):\n",
+    "        X_c = X[Y == c]\n",
+    "        # Éviter la division par zéro dans le cas où une classe n'a pas d'exemples\n",
+    "        if X_c.shape[0] > 0:\n",
+    "            theta[c] = np.mean(X_c, axis=0)\n",
+    "        else:\n",
+    "            theta[c] = np.zeros(num_features)  # Aucune donnée pour cette classe\n",
+    "    \n",
+    "    return theta"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(10, 256)\n",
+      "[[0.00093897 0.00657277 0.03192488 ... 0.02347418 0.00375587 0.        ]\n",
+      " [0.         0.         0.         ... 0.00233372 0.         0.        ]\n",
+      " [0.01941748 0.05987055 0.13430421 ... 0.27993528 0.20711974 0.11326861]\n",
+      " ...\n",
+      " [0.06666667 0.16078431 0.2745098  ... 0.         0.         0.        ]\n",
+      " [0.01033058 0.05371901 0.1322314  ... 0.01446281 0.00206612 0.        ]\n",
+      " [0.0037037  0.0037037  0.01111111 ... 0.00555556 0.00185185 0.        ]]\n"
+     ]
+    }
+   ],
+   "source": [
+    "theta = learnBernoulli ( Xb_train,Y_train )\n",
+    "print(theta.shape)\n",
+    "print(theta)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Check du résultat précédent:\n",
+    "```\n",
+    "(10, 256)\n",
+    "[[0.00093897 0.00657277 0.03192488 ... 0.02347418 0.00375587 0.        ]\n",
+    " [0.         0.         0.         ... 0.00233372 0.         0.        ]\n",
+    " [0.01941748 0.05987055 0.13430421 ... 0.27993528 0.20711974 0.11326861]\n",
+    " ...\n",
+    " [0.06666667 0.16078431 0.2745098  ... 0.         0.         0.        ]\n",
+    " [0.01033058 0.05371901 0.1322314  ... 0.01446281 0.00206612 0.        ]\n",
+    " [0.0037037  0.0037037  0.01111111 ... 0.00555556 0.00185185 0.        ]]\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### B-2: Ecrire ensuite une fonction de calcul de la vraisemblance d'une image par rapport à ces paramètres\n",
+    "\n",
+    "**Attention** $log(0)$ n'est pas défini et $log(1-x)$ avec $x=1$ non plus ! \n",
+    "La solution à ce problème est assez simple, il suffit de seuiller les probabilités d'illumination entre $\\epsilon $ et $1-\\epsilon$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def logpobsBernoulli(X, theta):\n",
+    "    \n",
+    "    epsilon = 1e-4\n",
+    "    theta = np.clip(theta, epsilon, 1-epsilon)  # Seuillage pour éviter log(0)\n",
+    "    \n",
+    "    # Calcul de la log-vraisemblance pour chaque image et chaque classe\n",
+    "    log_prob = np.sum(X * np.log(theta) + (1 - X) * np.log(1 - theta), axis=1)\n",
+    "    \n",
+    "    return log_prob"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([ -84.92517398, -742.65796653, -171.38766957, -175.31753619,\n",
+       "       -216.95715849, -161.36508121, -208.21533436, -360.17024632,\n",
+       "       -172.16285293, -287.87685778])"
+      ]
+     },
+     "execution_count": 34,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "logpobsBernoulli(Xb_train[0], theta)\n",
+    "# check avec un epsilon = 1e-4 : \n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### B-3: Evaluer ensuite vos performances avec les mêmes méthodes que précédemment"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Taux de bonne classification: 0.8533724340175953\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<matplotlib.image.AxesImage at 0x7f8e20bca5b0>"
+      ]
+     },
+     "execution_count": 35,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "Y_test_hat = [np.argmax(logpobsBernoulli(Xb_test[i], theta)) for i in range (len(Xb_test))]\n",
+    "\n",
+    "m = matrice_confusion(Y_test, Y_test_hat)\n",
+    "\n",
+    "print(\"Taux de bonne classification: {}\".format(np.where(Y_test == Y_test_hat, 1, 0).mean()))\n",
+    "\n",
+    "plt.figure()\n",
+    "plt.imshow(m)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# C. Modélisation des profils de chiffre\n",
+    "\n",
+    "Comme expliquer dans le TD 2, il est possible de jouer avec les profils des images: chaque image est alors séparée en 16 lignes et pour chaque ligne, nous modélisons l'apparition du premier pixel allumé avec une loi géométrique.\n",
+    "Pour plus de simplicité, nous vous donnons ci-dessous la fonction de transformation de la base d'image et son application."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "################################################################################\n",
+    "# modelisation geometrique\n",
+    "def transfoProfil(X):\n",
+    "    x2 = []\n",
+    "    for x in X:\n",
+    "        ind = np.where(np.hstack((x.reshape(16, 16), np.ones((16,1))))>0.3)\n",
+    "        x2.append( [ind[1][np.where(ind[0] == i)][0] for i in range(16)])\n",
+    "    return np.array(x2)\n",
+    "\n",
+    "Xg_train = transfoProfil(Xb_train)\n",
+    "Xg_test  = transfoProfil(Xb_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 37,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[3 2 2 2 2 2 2 1 1 1 2 1 2 2 3 4]\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(Xg_train[0]) # [3 2 2 2 2 2 2 1 1 1 2 1 2 2 3 4]\n",
+    "# une image est maintenant représentée par 16 entiers"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### C-123: Ecrire les fonctions d'apprentissage des paramètres et de calcul de la vraisemblance avec cette modélisation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[[  -8.824526   -174.9886854   -91.01829945 -159.16489362 -114.07686605\n",
+      "   -79.46882406  -39.20471692 -239.80233372  -60.03287643 -148.96562071]]\n",
+      "Taux de bonne classification: 0.6836102965135223\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "def learn_gaussian_parameters(X, Y, num_classes=10):\n",
+    "  mu = np.zeros((num_classes, X.shape[1]))\n",
+    "  for c in range(num_classes):\n",
+    "    X_c = X[Y == c]\n",
+    "    if X_c.size != 0:  # Check for empty class (avoid division by zero)\n",
+    "      mu[c] = np.mean(X_c, axis=0)\n",
+    "  return mu\n",
+    "\n",
+    "\n",
+    "def calculate_log_likelihoods_gaussian(X, theta):\n",
+    "  if X.ndim == 1:\n",
+    "    X = X.reshape(1, -1)\n",
+    "\n",
+    "  log_probs = np.zeros((X.shape[0], theta.shape[0]))\n",
+    "  for c in range(theta.shape[0]):\n",
+    "    diff = X - theta[c]\n",
+    "    squared_diff = diff ** 2\n",
+    "    log_probs[:, c] = -0.5 * np.sum(squared_diff, axis=1)  # More efficient calculation for Gaussian\n",
+    "\n",
+    "  return log_probs\n",
+    "\n",
+    "\n",
+    "# Learn Gaussian parameters (mean vectors)\n",
+    "theta = learn_gaussian_parameters(Xg_train, Y_train)\n",
+    "\n",
+    "# Calculate log-likelihoods for a test data point\n",
+    "print(calculate_log_likelihoods_gaussian(Xg_test[1], theta))\n",
+    "\n",
+    "# Predict class labels for training and test data\n",
+    "Y_train_hat = np.argmax(calculate_log_likelihoods_gaussian(Xg_train, theta), axis=1)\n",
+    "Y_test_hat = np.argmax(calculate_log_likelihoods_gaussian(Xg_test, theta), axis=1)\n",
+    "\n",
+    "# Calculate confusion matrices\n",
+    "ma = matrice_confusion(Y_train, Y_train_hat)\n",
+    "mt = matrice_confusion(Y_test, Y_test_hat)\n",
+    "\n",
+    "# Print classification accuracy\n",
+    "print(\"Taux de bonne classification: {}\".format(np.where(Y_test == Y_test_hat, 1, 0).mean()))\n",
+    "\n",
+    "# Plot confusion matrices (assuming `plt` is imported)\n",
+    "plt.figure()\n",
+    "plt.imshow(ma)\n",
+    "plt.title(\"Matrice de Confusion - Train\")\n",
+    "plt.figure()\n",
+    "plt.imshow(mt)\n",
+    "plt.title(\"Matrice de Confusion - Test\")\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# D. Maximum a posteriori\n",
+    "\n",
+    "Etant donné les distributions non uniformes de classes observées sur le jeu de donnée:\n",
+    "\n",
+    "<img src=\"distr_classes.png\" title=\"Distribution des classes\">\n",
+    "\n",
+    "Calculer les maxima a posteriori avec les différentes modélisations et vérifier s'il y a un gain en performance avec cette modélisation."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 39,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[0.17097447 0.13758228 0.09921336 0.09054423 0.08765452 0.0757746\n",
+      " 0.09198908 0.0818751  0.07770108 0.08669128]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# récupération des probabilités a priori sur les données d'apprentissage:\n",
+    "p= np.histogram(Y_train, np.linspace(-0.5,9.5,11))\n",
+    "p = p[0] / p[0].sum()\n",
+    "print(p)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# E. Fusion de modèle\n",
+    "\n",
+    "Réussirez-vous à fusionner les sorties des modèles précédents pour améliorer la performance globale en test?\n",
+    "* En faisant voter les classifieurs\n",
+    "* En pondérant ces votes par leurs performances en apprentissage\n",
+    "* En fusionnant les vraisemblances"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# F. Proposer une modélisation en 16 niveaux de gris basées sur une loi multinomiale"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.8.8"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
